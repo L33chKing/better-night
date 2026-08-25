@@ -1,0 +1,40 @@
+{
+  "id": "RealisticNight",
+  "displayName": "Better Night",
+  "description": "A darker, more realistic night with procedural street lighting. Lifts the near-black night floor, boosts city window / vehicle / beacon lights, and lines the road network with low-poly cobra-head street lamps (glowing lens + real ground-light pools drawn by a custom URP pass). Lamp poles are physically knocked down by explosion shockwaves. Fully client-side and multiplayer-safe; every effect reverts when the mod is disabled.",
+  "tags": [
+    "Art",
+    "QoL",
+    "visual",
+    "client side"
+  ],
+  "urls": [
+    {
+      "name": "info",
+      "url": "https://github.com/REPLACE_ME_GITHUB_USER/better-night"
+    }
+  ],
+  "authors": [
+    "LeechKing"
+  ],
+  "githubOwner": "REPLACE_ME_GITHUB_USER",
+  "githubRepoName": "better-night",
+  "autoUpdateArtifacts": "True",
+  "artifacts": [
+    {
+      "type": "plugin",
+      "fileName": "BetterNight-v0.9.39.zip",
+      "downloadUrl": "https://github.com/REPLACE_ME_GITHUB_USER/better-night/releases/download/v0.9.39/BetterNight-v0.9.39.zip",
+      "hash": "sha256:29717f89ab92712972679c16bd96c0c3c7436c2a6f162dda57878f257a0643c8",
+      "gameVersion": "0.34.1",
+      "version": "0.9.39",
+      "category": "Release",
+      "dependencies": [
+        {
+          "id": "BepInEx.ConfigurationManager",
+          "version": "18.4.1"
+        }
+      ]
+    }
+  ]
+}

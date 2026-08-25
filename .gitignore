@@ -1,0 +1,27 @@
+# --- Build output / release artifacts (uploaded to GitHub Releases, not committed) ---
+/dist/
+*.zip
+
+# --- Compiled binaries ---
+*.dll
+*.pdb
+src/bin/
+src/obj/
+
+# --- Unity (if you keep a full shader project locally) ---
+shader/Library/
+shader/Temp/
+shader/Obj/
+shader/Logs/
+shader/UserSettings/
+shader/AssetBundlesOut/
+shader/*.csproj
+shader/*.sln
+
+# --- OS / editor cruft ---
+.vs/
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
+.DS_Store
