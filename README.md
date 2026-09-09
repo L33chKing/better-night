@@ -1,63 +1,58 @@
 # Better Night
 
-Vanilla night in Nuclear Option is basically pure black. Better Night lifts it to a plausible moonlit level, mines the map's road network with street lamps that cast real light pools on the ground. Blow one up and the pole physically topples.
+Vanilla night in Nuclear Option is basically pure black. Better Night lifts it to a plausible moonlit level, lines the road network with street lamps that cast real light pools, and gives ground vehicles headlights and ships deck floods plus turret-slaved searchlights. Blow a lamp post up and it physically topples.
 
-It's fully client-side and multiplayer-safe.
-
-The plugin file is `RealisticNight.dll` (GUID `com.leech.realisticnight`) because the project started life as "RealisticNight" — the display name is Better Night. The rank-gated NVG/thermal optics are a separate mod, Tiered NVG.
-
-<!-- drop a screenshot or two here once you have them -->
+Fully client-side and multiplayer-safe. `RealisticNight.dll` (GUID `com.leech.realisticnight`) plus the `realisticnight_fx` shader bundle, kept together in `BepInEx/plugins/RealisticNight/`. Rank-gated NVG/thermal optics are the separate Tiered NVG mod.
 
 ---
 
 ## Features
 
-**Night**
-- Raises the near-black night with world-space ambient. Your cockpit is a separate camera so it stays dark inside. Tunable strength + colour tint.
+**Night** — world-space ambient lift (cockpit stays dark), tunable strength + tint.
 
-**Existing lights**
-- Boosts city building windows (only the already-lit ones, dark roofs left alone), vehicle/ship/aircraft nav and engine lights, and everything else emissive (windmills, antennas, beacons). Master intensity over the lot, plus a building draw-distance multiplied so the cities are visible more than 10km way.
-**Street lights** (the map ships none, these are spawned)
-- Placed along the whole road network and classified City / Main / Rural by local road density, which sets per-class spacing and colour (cool white LED for city/main, warm sodium for rural).
-- Low-poly cobra-head lamp posts (round tapered shaft, swept mast arm, cobra-head luminaire) as one instanced mesh across thousands of poles.
-- Real ground-light pools drawn by a custom URP full-screen pass that rebuilds the ground from depth and adds each lamp's light. This sidesteps URP's 8-lights-per-surface cap, so the whole map can be lit.
+**City windows** — boosts already-lit building windows only, with distance haze and extended draw distance.
 
-**Destructible poles**
-- Poles are physically knocked down by the game's real explosion shockwaves, using its own overpressure model. Violent near the blast, still standing at the weak far edge.
+**Street lights** (spawned, the map ships none) — placed along all roads, classed City / Main / Rural by road density (spacing + white LED vs warm sodium). Cobra-head posts, glow orbs, and ground-light pools from a custom URP pass (depth-reconstructed, so no 8-light cap). Pools keep the ground's own colour and scale with its reflectivity instead of painting it white. Poles topple with real physics from the game's own shockwaves.
+
+**Headlights** — volumetric cones + hull lens decals + forward spot pools on ground vehicles (modeled lenses where found, bumper mounts where not). Red tail/brake lights included.
+
+**Ship lights** — deck flood pools (count scales with hull length) + a searchlight slaved to the forward-most turret's aim (mast fixture fallback). Ships keep their vanilla nav lights; the mod adds working lights only.
 
 ---
 
 ## Requirements
 
-- Nuclear Option 0.34.1 (built and tested on this build)
+- Nuclear Option 0.34.1
 - BepInEx 5.x
-- BepInEx.ConfigurationManager 18.4.1 (the in-game config UI, F1)
+- BepInEx.ConfigurationManager 18.4.1 (in-game config UI, F1)
 
 ## Installation
 
-Via NOMM: install through the [Nuclear Option Mod Manager](https://github.com/Combat787/NOMM) and pick Better Night from the list.
+Via NOMM: pick Better Night from the list.
 
 Manual:
 1. Install BepInEx 5 and ConfigurationManager.
 2. Grab the latest `BetterNight-vX.Y.Z.zip` from Releases.
-3. Extract so both files land together in `BepInEx/plugins/RealisticNight/`:
+3. Extract both files together into `BepInEx/plugins/RealisticNight/`:
 
 ```
 BepInEx/plugins/RealisticNight/RealisticNight.dll
 BepInEx/plugins/RealisticNight/realisticnight_fx
 ```
 
-The DLL loads the shader bundle from its own folder, so keep the two files together. Launch a mission and press F1 to configure.
+Launch a mission, press F1 to configure.
 
 ## Building from source
 
-Plugin DLL — a .NET Framework 4.7.2 library compiled straight with Roslyn against the game's own assemblies, no NuGet. Fix the paths at the top of `src/build.sh` if your install differs, then:
+Plugin DLL (Roslyn, no NuGet, against the game's own assemblies):
 
 ```
 bash src/build.sh
 ```
 
-Shader bundle (`realisticnight_fx`) — the ground-light and orb shaders ride in an AssetBundle built with Unity 2022.3.62f2 in batch mode. A prebuilt bundle ships in every release, so you only need this if you touch the shaders. See `shader/README.md`.
+Shader bundle (`realisticnight_fx`, Unity 2022.3.62f2 batch mode; only needed if you touch shaders):
+
+See `shader/README.md` (process) and `shader/BUILD.md` (exact commands).
 
 ## License
 

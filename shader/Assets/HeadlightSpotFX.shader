@@ -1,13 +1,13 @@
-Shader "Hidden/RealisticNight/StreetLightFX"
+Shader "Hidden/RealisticNight/HeadlightSpotFX"
 {
-    // Per-lamp light volumes (URP 2022.3): billboard quads, depth-reconstructed ground, range-normalized falloff + rim window. Raw-global (floating-origin safe).
+    // Directional headlight pools (same deferred idea, per-lamp beam dir + cone half-angle).
     Properties
     {
         _Intensity ("Intensity", Float) = 3
-        _Range ("Range (m)", Float) = 30
+        _Range ("Range (m)", Float) = 40
         _FalloffK ("Falloff K", Float) = 0.02
         _NdotL ("Surface Shading", Float) = 0.7
-        _Color ("Light Color", Color) = (1.0, 0.8, 0.45, 1)
+        _Color ("Light Color", Color) = (1.0, 0.97, 0.9, 1)
     }
     SubShader
     {
@@ -28,21 +28,21 @@ Shader "Hidden/RealisticNight/StreetLightFX"
             float4 _RN_OriginPos;          // Datum.origin world pos -> reconstructed ground - this = RAW GLOBAL
             float4x4 _RN_VP;               // GPUProj * view (forward), volume vertex transform
             float4 _RN_CamRight, _RN_CamUp; // camera basis in world (billboard the volume quad)
-            float4 _RN_CamPos;             // camera world position (decide fullscreen vs tight quad)
-            float4 _ProjectionParams;      // .x = -1 when the projection is Y-flipped (screen-UV helper)
+            float4 _RN_CamPos;             // camera world position
+            float4 _ProjectionParams;
             float4 _ScreenParams;
-            StructuredBuffer<float4> _LampsBuf; // xyz = RAW GLOBAL pos, w = warm(0=LED,1=sodium). No cbuffer cap.
+            StructuredBuffer<float4> _LampsBuf; // xyz = RAW GLOBAL pos, w = warm (kept for uniform compat)
+            StructuredBuffer<float4> _SpotDirs; // xyz = beam dir (Datum is translation-only, so world == raw frame), w = cos(half-angle)
             int _LampCount;
             float _Intensity, _Range, _FalloffK, _NdotL;
-            float _IntensityWarm; // separate ground brightness for YELLOW/sodium lamps (white reads brighter)
-            float _AtmosRange;    // haze: ground pools fade with camera->lamp distance (shared with the orbs)
-            float _AtmosCurve;    // shared haze-curve exponent (C#: Atmospheric Curve)
-            float4 _Color;      // LED white (city roads)
-            float4 _ColorWarm;  // sodium yellow (main + rural roads); per-lamp blend via _LampsBuf[i].w
-            float _Preserve;    // 0 = plain add, 1 = lift tinted by the surface's own chromaticity
+            float _IntensityWarm;
+            float _AtmosRange;
+            float _AtmosCurve; // shared haze-curve exponent (C#: Atmospheric Curve)
+            float4 _Color;
+            float4 _ColorWarm;
+            float _Preserve;    // headlights composite additively (_Preserve = 0 from C#)
             float _TintStrength; // 0 = neutral-white lift, 1 = full lamp tint (default 1 = today's look)
 
-            // Fullscreen triangle (for the composite pass).
             struct Attributes { uint vertexID : SV_VertexID; };
             struct Varyings { float4 positionCS : SV_POSITION; float2 texcoord : TEXCOORD0; };
             Varyings Vert(Attributes input)
@@ -54,7 +54,6 @@ Shader "Hidden/RealisticNight/StreetLightFX"
                 return o;
             }
 
-            // Classic ComputeScreenPos: screen UV for sampling _CameraDepthTexture (Y flip via _ProjectionParams.x).
             float4 ScreenPos(float4 pos)
             {
                 float4 o = pos * 0.5;
@@ -63,15 +62,24 @@ Shader "Hidden/RealisticNight/StreetLightFX"
                 return o;
             }
 
-            // Shared lamp-volume vertex stage (all volume passes).
-            struct VolAttr { uint vid : SV_VertexID; uint iid : SV_InstanceID; };
-
-            struct VolVary { float4 positionCS : SV_POSITION; float4 screenPos : TEXCOORD0; float3 headRaw : TEXCOORD1; float warm : TEXCOORD2; float fade : TEXCOORD3; float2 quadUV : TEXCOORD4; };
-
-            VolVary VertVol(VolAttr input)
+            // Shared spot vertex stage (all volume passes).
+            struct SpotAttr { uint vid : SV_VertexID; uint iid : SV_InstanceID; };
+            struct SpotVary
             {
-                VolVary o;
+                float4 positionCS : SV_POSITION;
+                float4 screenPos : TEXCOORD0;
+                float3 headRaw : TEXCOORD1;
+                float3 beamDir : TEXCOORD2;
+                float cosHalf : TEXCOORD3;
+                float fade : TEXCOORD4;
+                float2 quadUV : TEXCOORD5;
+            };
+
+            SpotVary VertSpot(SpotAttr input)
+            {
+                SpotVary o;
                 float4 lamp = _LampsBuf[input.iid];
+                float4 sd = _SpotDirs[input.iid];
                 float3 headRaw = lamp.xyz;                          // RAW GLOBAL lamp position
                 float3 headUnity = headRaw + _RN_OriginPos.xyz;     // -> Unity world, only to place the quad
                 float2 corners[6] = { float2(-1,-1), float2(1,-1), float2(1,1), float2(-1,-1), float2(1,1), float2(-1,1) };
@@ -83,19 +91,21 @@ Shader "Hidden/RealisticNight/StreetLightFX"
                 }
                 else
                 {
-                    float3 wpos = headUnity + (_RN_CamRight.xyz * c.x + _RN_CamUp.xyz * c.y) * (_Range * 1.6);
+                        float3 wpos = headUnity + (_RN_CamRight.xyz * c.x + _RN_CamUp.xyz * c.y) * (_Range * 1.6);
                     o.positionCS = mul(_RN_VP, float4(wpos, 1.0));
                 }
                 o.screenPos = ScreenPos(o.positionCS);
                 o.headRaw = headRaw;
-                o.warm = lamp.w;
+                o.beamDir = sd.xyz;
+                o.cosHalf = sd.w;
                 o.quadUV = c; // quad-local corner (-1..1): border fade hides the quad edges
                 o.fade = exp(-pow(distance(headUnity, _RN_CamPos.xyz) / max(1.0, _AtmosRange), max(0.05, _AtmosCurve))); // atmospheric haze
                 return o;
             }
 
-            // Pool fragment: range-normalized falloff + rim window (hides quad edges).
-            half4 FragVol(VolVary i) : SV_Target
+            // Shared spot fragment (base volume pass). 0.9.39-style range-normalized falloff
+            // (see street shader); the cone keeps only surfaces inside the beam (smooth-edged).
+            half4 FragSpot(SpotVary i) : SV_Target
             {
                 float2 uv = i.screenPos.xy / i.screenPos.w;
                 float raw = SAMPLE_TEXTURE2D(_CameraDepthTexture, sampler_PointClamp, uv).r;
@@ -104,47 +114,46 @@ Shader "Hidden/RealisticNight/StreetLightFX"
                 float3 L = i.headRaw - surf;
                 float d2 = dot(L, L);
                 float d = sqrt(d2);
-                float3 N = normalize(cross(ddy(surf), ddx(surf)));
-                float ndl = lerp(1.0, saturate(dot(N, L / max(d, 1e-3))), saturate(_NdotL));
-                // Soft rim window (also hides the billboard quad edges: light reaches 0 at R,
-                // well inside the 1.15R quad). Falloff curve itself stays 0.9.39-normalized.
+                // Soft rim window (also hides the billboard quad edges). Falloff stays normalized.
                 float R = max(1.0, _Range);
                 float win = 1.0 - smoothstep(R * 0.7, R, d);
                 float att = win / (1.0 + d2 * _FalloffK);
-                float warm = saturate(i.warm);
-                float3 col = lerp(_Color.rgb, _ColorWarm.rgb, warm);
-                float intensity = lerp(_Intensity, _IntensityWarm, warm);
+                // Cone test: surface must lie along the beam. Wide soft edge so rims melt instead of ringing.
+                float3 fromLamp = (surf - i.headRaw) / max(d, 1e-3);
+                float cosang = dot(fromLamp, normalize(i.beamDir));
+                float cone = smoothstep(max(-1.0, i.cosHalf - 0.15), min(1.0, i.cosHalf + 0.05), cosang);
+                float3 N = normalize(cross(ddy(surf), ddx(surf)));
+                float ndl = lerp(1.0, saturate(dot(N, L / max(d, 1e-3))), saturate(_NdotL));
                 // Tint Strength: blend the lamp color toward its own luminance (0 = neutral-white
                 // lift at identical brightness, 1 = full lamp tint). Default 1.0 = today's look.
-                float3 tinted = col * intensity;
+                float3 tinted = _Color.rgb * _Intensity;
                 float lum = dot(tinted, float3(0.2126, 0.7152, 0.0722));
                 float3 lampCol = lerp(lum.xxx, tinted, saturate(_TintStrength));
                 // Border fade: 1.0 inside 90% of the quad, exactly 0.0 at its border, so the quad
                 // edge can never print a line regardless of viewing angle. Interior is untouched.
                 float rim = 1.0 - smoothstep(0.9, 1.0, max(abs(i.quadUV.x), abs(i.quadUV.y)));
-                return half4(att * ndl * lampCol * i.fade * rim, 1.0);
+                return half4(att * ndl * cone * lampCol * i.fade * rim, 1.0);
             }
         ENDHLSL
 
-        // Pass 0 — LIGHT VOLUMES -> full-res light buffer (additive; overlapping pools accumulate). Drawn
-        // procedurally as 6 verts x N lamp instances; each is a camera-facing billboard quad.
+        // Pass 0 — SPOT VOLUMES -> light buffer (additive). Per-lamp sphere-fitted quad;
+        // the fragment keeps only surfaces inside the beam cone (smooth-edged).
         Pass
         {
-            Name "RN_StreetLight_Volume"
+            Name "RN_Headlight_Spot"
             Blend One One
             HLSLPROGRAM
-            #pragma vertex VertVol
-            #pragma fragment FragVol
+            #pragma vertex VertSpot
+            #pragma fragment FragSpot
             #pragma target 4.5
 
             ENDHLSL
         }
 
-        // Pass 1 — COMPOSITE the light onto the scene. _BlitTexture = scene copy, _VolLight = the light.
-        // preserve 0 -> plain add; preserve 1 -> the lift is retinted by each surface's OWN chromaticity.
+        // Pass 1 — COMPOSITE (additive; the C# side pins _Preserve = 0 for headlights).
         Pass
         {
-            Name "RN_StreetLight_Composite"
+            Name "RN_Headlight_SpotComposite"
             HLSLPROGRAM
             #pragma vertex Vert
             #pragma fragment FragComposite
@@ -157,9 +166,9 @@ Shader "Hidden/RealisticNight/StreetLightFX"
                 // Surface chromaticity: the ground's own colour, independent of how dark it is.
                 float maxc = max(scene.r, max(scene.g, scene.b));
                 float3 hue = scene / max(maxc, 1e-4);
-                // Reflectivity: dark ground absorbs (no white veil), bright ground reflects. Preserve 0 = plain add.
+                // Reflectivity: dark ground absorbs (no white veil), bright ground reflects.
                 float resp = saturate(maxc * 10.0);
-                // Preserve 1 = lift keeps surface colour x reflectivity (lightens, never paints).
+                // Same hue x reflectivity model as street (own pass). Pinned on in C#.
                 float3 mixv = lerp(float3(1.0, 1.0, 1.0), hue * resp, saturate(_Preserve));
                 return half4(scene + light * mixv, 1.0);
             }

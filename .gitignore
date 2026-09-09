@@ -1,6 +1,8 @@
 # --- Build output / release artifacts (uploaded to GitHub Releases, not committed) ---
 /dist/
 *.zip
+/realisticnight_fx
+/meta.json
 
 # --- Compiled binaries ---
 *.dll
@@ -17,6 +19,10 @@ shader/UserSettings/
 shader/AssetBundlesOut/
 shader/*.csproj
 shader/*.sln
+/shaderproj/
+
+# --- Local-only build notes (machine-specific paths, not for the repo) ---
+shader/BUILD.md
 
 # --- OS / editor cruft ---
 .vs/

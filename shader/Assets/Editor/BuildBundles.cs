@@ -19,6 +19,7 @@ public static class BuildBundles
     {
         ("Assets/StreetLightFX.shader", "Assets/StreetLightMat.mat"),
         ("Assets/StreetOrb.shader",     "Assets/StreetOrbMat.mat"),
+        ("Assets/HeadlightSpotFX.shader", "Assets/HeadlightSpotMat.mat"), // v2: directional headlight spot pools
     };
 
     public static void Build()
