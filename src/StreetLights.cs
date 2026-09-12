@@ -129,6 +129,7 @@ namespace RealisticNight
                 if (Time.realtimeSinceStartup < nextBuildTry) return; // throttle (re)builds ~1/s
                 nextBuildTry = Time.realtimeSinceStartup + 1f;
                 Build();
+                if (!built) GateStatus(); // still stalled: throttled one-line reason (see log)
                 return;
             }
 
@@ -145,9 +146,36 @@ namespace RealisticNight
             }
         }
 
+        // Stalled-build diagnostic: re-reads every build gate (cheap, 1/30 s) so one log run
+        // pinpoints which mission-start dependency never arrives (levelInfo / roadNetwork /
+        // roads / terrain / floating origin). Silent once built.
+        static float nextGateLog;
+        static void GateStatus()
+        {
+            if (Time.realtimeSinceStartup < nextGateLog) return;
+            nextGateLog = Time.realtimeSinceStartup + 30f;
+            try
+            {
+                LevelInfo li = null;
+                try { li = NetworkSceneSingleton<LevelInfo>.i; } catch { }
+                RoadNetwork net = null;
+                try { net = (li != null) ? li.roadNetwork : null; } catch { }
+                bool exists = false;
+                try { exists = net != null && net.Exists(); } catch { }
+                int roads = -1;
+                try { roads = (net != null && net.roads != null) ? net.roads.Count : -1; } catch { }
+                bool terrain = false;
+                try { terrain = Terrain.activeTerrains != null && Terrain.activeTerrains.Length > 0; } catch { }
+                bool origin = false;
+                try { origin = Datum.origin != null; } catch { }
+                if (RealisticNightPlugin.DiagOn())
+                    RealisticNightPlugin.Log.LogInfo($"[StreetLights] waiting to build: levelInfo={li != null} net={net != null} exists={exists} roads={roads} terrain={terrain} origin={origin} (retrying 1/s)");
+            }
+            catch { }
+        }
+
         // Orb renders at this fraction of Glow Radius, reading as a lamp lens, not a floating ball.
-        const float OrbSizeScale = 0.5f;
-        const float WaterClearance = 0.8f; // seated point this far above real terrain = water/deck, not ground
+        const float OrbSizeScale = 0.5f;        const float WaterClearance = 0.8f; // seated point this far above real terrain = water/deck, not ground
         static bool IsWaterName(string n) // water planes by name (catches shallow hits the clearance misses)
         {
             if (string.IsNullOrEmpty(n)) return false;
@@ -678,6 +706,22 @@ namespace RealisticNight
             bool exists = net != null && net.Exists();
             if (!exists) return;
 
+            // Mission-start race: build once, but only when the road set is actually streamed in.
+            // Empty reads just take the throttled retry above; after a successful build this costs nothing.
+            // NOTE: deliberately NOT gated on Terrain.activeTerrains: this game's ground is not a Unity
+            // Terrain (activeTerrains stays empty all mission — proven by waiting-to-build logs), so that
+            // gate blocked every build forever. Ground seating + the over-water skip run on physics
+            // raycasts (the primary path), with the terrain heightfield used only as a reference when present.
+            // (A road-less map builds nothing either way — the building pass keys off road lamps.)
+            int roadTotal = 0;
+            try { roadTotal = (net.roads != null) ? net.roads.Count : 0; } catch { }
+            if (roadTotal <= 0) return;
+            // Floating-origin frame: container-space MUST equal raw-global (orb bake, pool feed,
+            // ground seating and the water test all assume it). Building before Datum.origin spawns
+            // would bake world-as-raw with no self-heal (built stays true), permanently offsetting
+            // pools/orbs and corrupting the water check once the origin appears.
+            try { if (Datum.origin == null) return; } catch { return; }
+
             bCore = RealisticNightPlugin.StreetLightCore.Value;
             bFalloff = RealisticNightPlugin.StreetLightFalloff.Value;
             if (tex == null) tex = GlowFX.RadialTex(128, bCore, bFalloff);
@@ -903,6 +947,7 @@ namespace RealisticNight
 
             PlaceBuildingLamps();
             built = true;
+            try { if (RealisticNightPlugin.DiagOn()) RealisticNightPlugin.Log.LogInfo($"[StreetLights] built {count} lamps ({ballLocal.Count} orbs) from {roadTotal} roads (waterRef={waterTHas}, skipWater={bSkipWater})."); } catch { }
             nextUnitRescan = Time.realtimeSinceStartup + 5f;
         }
 

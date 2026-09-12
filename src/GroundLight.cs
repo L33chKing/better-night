@@ -45,6 +45,8 @@ namespace RealisticNight
         internal static Material SpotMat { get { EnsureLoaded(); return spotSrcMat; } }
         static Material shipBeamMat; // searchlight beam shader (null on old bundles -> SoftGlow fallback)
         internal static Material ShipBeamMat { get { EnsureLoaded(); return shipBeamMat; } }
+        static Material mslSrcMat; // missile per-lamp-range pools (null on old bundles -> street omni fallback)
+        internal static Material MissileMat { get { EnsureLoaded(); return mslSrcMat; } }
 
 
         static bool lampsDirty;
@@ -83,6 +85,7 @@ namespace RealisticNight
                 orbMat = ab.LoadAsset<Material>("Assets/StreetOrbMat.mat");
                 spotSrcMat = ab.LoadAsset<Material>("Assets/HeadlightSpotMat.mat"); // headlight spot pools (null on v1 bundles -> omni fallback)
                 shipBeamMat = ab.LoadAsset<Material>("Assets/ShipBeamMat.mat"); // soft beam cones (null on old bundles)
+                mslSrcMat = ab.LoadAsset<Material>("Assets/MissileMat.mat"); // per-lamp-range missile pools (null on old bundles -> street omni)
             }
             catch (Exception e) { RealisticNightPlugin.Log.LogWarning($"[StreetLightFX] load error: {e.Message}"); }
         }
@@ -138,6 +141,27 @@ namespace RealisticNight
             }
             catch (Exception e) { RealisticNightPlugin.Log.LogWarning($"[StreetLightFX] install error: {e.Message}"); }
         }
+
+        // Pool-pipeline status in one line (diagnostics toggle, 30 s): lamp counts actually FED to
+        // each backend this frame, whether its pass is armed, and whether its material exists.
+        // fed=0 while its lamps are plainly visible as orbs/fixtures = feed-side stall (build/cull);
+        // fed>0 + active but nothing on the ground = composite-side failure (install/pass/blit).
+        internal static void LogPoolStatus(bool night)
+        {
+            try
+            {
+                bool datumNull = true;
+                try { datumNull = Datum.origin == null; } catch { }
+                bool streetMatNull = true, headMatNull = true, deckMatNull = true, searchMatNull = true, mslMatNull = true;
+                try { streetMatNull = Mat == null; } catch { }
+                try { headMatNull = HeadlightPools.Mat == null; } catch { }
+                try { deckMatNull = ShipLights.DeckMat == null; } catch { }
+                try { searchMatNull = ShipLights.SearchMat == null; } catch { }
+                try { mslMatNull = MissileExhaust.PoolMat == null; } catch { }
+                RealisticNightPlugin.Log.LogInfo($"[Pools] night={night} datumNull={datumNull} installed={installed} | street fed={LampCount} active={Active} matNull={streetMatNull} | head fed={HeadlightPools.LampCount} active={HeadlightPools.Active} matNull={headMatNull} | deck={ShipLights.DeckLamps} deckMatNull={deckMatNull} search={ShipLights.SearchLamps} searchMatNull={searchMatNull} | msl={MissileExhaust.PoolLamps} mslMatNull={mslMatNull}");
+            }
+            catch { }
+        }
     }
 
     internal class StreetLightRendererFeature : ScriptableRendererFeature
@@ -150,11 +174,13 @@ namespace RealisticNight
             bool headOn = HeadlightPools.Active && HeadlightPools.Mat != null;
             bool shipDeckOn = ShipLights.DeckMat != null;
             bool shipSearchOn = ShipLights.SearchMat != null;
-            if (!streetOn && !headOn && !shipDeckOn && !shipSearchOn) return;
+            bool mslOn = MissileExhaust.PoolMat != null;
+            if (!streetOn && !headOn && !shipDeckOn && !shipSearchOn && !mslOn) return;
             if (data.cameraData.cameraType != CameraType.Game) return;
             if (data.cameraData.renderType != CameraRenderType.Base) return;
             pass.Setup(streetOn ? StreetLightFX.Mat : null, headOn ? HeadlightPools.Mat : null,
-                       shipDeckOn ? ShipLights.DeckMat : null, shipSearchOn ? ShipLights.SearchMat : null);
+                       shipDeckOn ? ShipLights.DeckMat : null, shipSearchOn ? ShipLights.SearchMat : null,
+                       mslOn ? MissileExhaust.PoolMat : null);
             renderer.EnqueuePass(pass);
         }
     }
@@ -165,6 +191,7 @@ namespace RealisticNight
         Material headMat;
         Material deckMat;   // ship deck floods (own omni backend)
         Material searchMat; // ship bow searchlight (own spot backend)
+        Material mslMat;    // missile exhaust omni pools (own backend, same shaders)
         RTHandle temp;      // full-res scene copy (composite input)
         RTHandle volRT;     // full-res per-lamp volume light
         static readonly int PInvVP = Shader.PropertyToID("_RN_InvVP");
@@ -175,6 +202,7 @@ namespace RealisticNight
         static readonly int PCamRight = Shader.PropertyToID("_RN_CamRight");
         static readonly int PCamUp = Shader.PropertyToID("_RN_CamUp");
         static readonly int PCamPos = Shader.PropertyToID("_RN_CamPos");
+        static readonly int PRNTime = Shader.PropertyToID("_RN_Time"); // missile flame flicker clock
         const int VolumePass = 0;    // RN_StreetLight_Volume
         const int CompositePass = 1; // RN_StreetLight_Composite
         // Skip degenerate (0-sized) camera targets (UI overlays) — a 0x0 volume RT crashes natively.
@@ -183,12 +211,13 @@ namespace RealisticNight
             var d = data.cameraData.cameraTargetDescriptor;
             return d.width < 4 || d.height < 4;
         }
-        public void Setup(Material m, Material hm, Material dm, Material sm)
+        public void Setup(Material m, Material hm, Material dm, Material sm, Material mm)
         {
             mat = m;
             headMat = hm;
             deckMat = dm;
             searchMat = sm;
+            mslMat = mm;
             ConfigureInput(ScriptableRenderPassInput.Depth); // need _CameraDepthTexture for world reconstruction
         }
         public override void OnCameraSetup(CommandBuffer cmd, ref RenderingData data)
@@ -234,7 +263,8 @@ namespace RealisticNight
             int hcount = (headMat != null) ? HeadlightPools.LampCount : 0;
             int dcount = (deckMat != null) ? ShipLights.DeckLamps : 0;
             int scount = (searchMat != null) ? ShipLights.SearchLamps : 0;
-            if (count <= 0 && hcount <= 0 && dcount <= 0 && scount <= 0) return;
+            int mcount = (mslMat != null) ? MissileExhaust.PoolLamps : 0;
+            if (count <= 0 && hcount <= 0 && dcount <= 0 && scount <= 0 && mcount <= 0) return;
 
             Camera cam = data.cameraData.camera;
             Matrix4x4 vp = GL.GetGPUProjectionMatrix(cam.projectionMatrix, true) * cam.worldToCameraMatrix;
@@ -280,6 +310,17 @@ namespace RealisticNight
                 searchMat.SetVector(PCamPos, cam.transform.position);
                 searchMat.SetVector(POriginPos, originPos);
             }
+            // Missile pools share the frame uniforms; look lives in MissileExhaust.ApplyLook.
+            if (mslMat != null)
+            {
+                mslMat.SetMatrix(PInvVP, vp.inverse);
+                mslMat.SetMatrix(PVP, vp);
+                mslMat.SetVector(PCamRight, cam.transform.right);
+                mslMat.SetVector(PCamUp, cam.transform.up);
+                mslMat.SetVector(PCamPos, cam.transform.position);
+                mslMat.SetVector(POriginPos, originPos);
+                try { mslMat.SetFloat(PRNTime, Time.time); } catch { } // flame flicker clock (no-op on street fallback)
+            }
             CommandBuffer cmd = CommandBufferPool.Get("RN_StreetLightFX");
             RTHandle src = data.cameraData.renderer.cameraColorTargetHandle;
 
@@ -321,6 +362,15 @@ namespace RealisticNight
                 searchMat.SetTexture(PVolLight, volRT);
                 Blitter.BlitCameraTexture(cmd, src, temp);
                 Blitter.BlitCameraTexture(cmd, temp, src, searchMat, ShipLights.SearchComp);
+            }
+            // Missile exhaust pools on top (own omni backend, same shaders).
+            if (mcount > 0 && mslMat != null)
+            {
+                CoreUtils.SetRenderTarget(cmd, volRT, ClearFlag.Color, Color.clear);
+                cmd.DrawProcedural(Matrix4x4.identity, mslMat, MissileExhaust.PoolVol, MeshTopology.Triangles, 6, mcount);
+                mslMat.SetTexture(PVolLight, volRT);
+                Blitter.BlitCameraTexture(cmd, src, temp);
+                Blitter.BlitCameraTexture(cmd, temp, src, mslMat, MissileExhaust.PoolComp);
             }
             context.ExecuteCommandBuffer(cmd);
             cmd.Clear();

@@ -654,7 +654,8 @@ namespace RealisticNight
             hasFreeLens = false;
             try { ResolveFreeFixture(); } catch { }
             // Pose immediately so the first frame is correct even before the next manager tick.
-            try { UpdateRig(true, true, transform.position, float.MaxValue, 0f); } catch { }
+            // Start dark: the manager's per-tick UpdateRig shows us only when lights are active (night or Always On).
+            try { UpdateRig(false, false, transform.position, float.MaxValue, 0f); } catch { }
         }
 
         // Mast-fallback fixture: hull-snapped once (shared raycast helper); re-snapped on bow flip.
@@ -854,7 +855,9 @@ namespace RealisticNight
             bool near = true;
             try { near = (transform.position - camPos).sqrMagnitude <= maxD2; }
             catch { near = true; }
-            showSearchFx = searchFxOn && near && alive;
+            // Day gate lives here as well as in the caller (searchFxOn already includes it):
+            // lightsActive=false must hide fixtures even if a caller ever passes searchFxOn=true.
+            showSearchFx = searchFxOn && lightsActive && near && alive;
             // CPU fixtures: anchor children track the turret free; the mast pair re-snaps (bow flips move it).
             if (fxGOs.Count == 0) EnsureFixtureGOs(); // lazy (shared meshes first)
             // Cone dims live in the shared mesh (reshaped on knob change above); GOs ride at identity scale.
@@ -1508,6 +1511,13 @@ namespace RealisticNight
         {
             if (mounts == null || idx >= cap) return;
             try { if (unit == null || unit.disabled) return; } catch { return; } // wrecks feed no pools
+            // Whole-rig range skip: mounts sit within ~8m of center, so beyond max+32m none can pass.
+            try
+            {
+                float md = Mathf.Sqrt(maxD2) + 32f;
+                if ((transform.position - camPos).sqrMagnitude > md * md) return;
+            }
+            catch { return; }
             float tilt = Mathf.Clamp(RealisticNightPlugin.HeadlightDownTilt.Value, 0f, 45f);
             Vector3 dirW = (transform.rotation * Quaternion.Euler(tilt, 0f, 0f)) * Vector3.forward;
             float cosHalf = Mathf.Cos(Mathf.Clamp(RealisticNightPlugin.HeadlightConeAngle.Value, 3f, 60f) * 0.5f * Mathf.Deg2Rad);
@@ -1539,18 +1549,25 @@ namespace RealisticNight
             bool on = lightsActive && alive;
             float lensSize = Mathf.Max(0.1f, RealisticNightPlugin.HeadlightLensSize.Value);
             float minPx = Mathf.Max(0f, RealisticNightPlugin.HeadlightLensMinPx.Value);
-            for (int i = 0; i < lensScales.Length; i++)
+            // Distance LOD first (manager passes camPos — no per-rig Camera.main lookup).
+            bool near = true;
+            try { near = (transform.position - camPos).sqrMagnitude <= maxD2; }
+            catch { near = true; }
+            if (near) // hidden fixtures consume no scales; stale values are never read while hidden
             {
-                Vector3 wpos;
-                try { wpos = transform.TransformPoint(lensPos[i]); } catch { wpos = camPos; }
-                lensScales[i] = DecalScale(lensSize, minPx, wpos, camPos, pxScale);
+                for (int i = 0; i < lensScales.Length; i++)
+                {
+                    Vector3 wpos;
+                    try { wpos = transform.TransformPoint(lensPos[i]); } catch { wpos = camPos; }
+                    lensScales[i] = DecalScale(lensSize, minPx, wpos, camPos, pxScale);
+                }
+                try
+                {
+                    rearLScale = DecalScale(lensSize, minPx, transform.TransformPoint(rearLPos), camPos, pxScale);
+                    rearRScale = DecalScale(lensSize, minPx, transform.TransformPoint(rearRPos), camPos, pxScale);
+                }
+                catch { rearLScale = rearRScale = lensSize; }
             }
-            try
-            {
-                rearLScale = DecalScale(lensSize, minPx, transform.TransformPoint(rearLPos), camPos, pxScale);
-                rearRScale = DecalScale(lensSize, minPx, transform.TransformPoint(rearRPos), camPos, pxScale);
-            }
-            catch { rearLScale = rearRScale = lensSize; }
             // Braking via decel heuristic on Unit.speed (vanilla exposes no brake signal), 1.5 s hold.
             bool rearOn = on && RealisticNightPlugin.RearLightsEnabled.Value;
             bool braking = false;
@@ -1564,10 +1581,6 @@ namespace RealisticNight
                 prevSpeed = sp;
             }
             catch { }
-            // Distance LOD (manager passes camPos — no per-rig Camera.main lookup).
-            bool near = true;
-            try { near = (transform.position - camPos).sqrMagnitude <= maxD2; }
-            catch { near = true; }
             showFx = fxOn && near && alive; // dead/abandoned hulls go dark (cones too, not just emission)
             showRearFx = rearOn && near;
             brakingNow = braking;

@@ -40,7 +40,14 @@ namespace RealisticNight
         }
 
         // General
+        public static ConfigEntry<bool> Diagnostics;
         public static ConfigEntry<bool> ModEnabled;
+
+        // True when diagnostic log lines are wanted (F1 menu top toggle). Warnings/errors always log.
+        internal static bool DiagOn()
+        {
+            try { return Diagnostics != null && Diagnostics.Value; } catch { return false; }
+        }
 
         // Night floor
         public static ConfigEntry<bool> NightEnabled;
@@ -52,11 +59,11 @@ namespace RealisticNight
         public static ConfigEntry<float> CityWindowIntensity;
         public static ConfigEntry<float> CityWindowWarmth;
         public static ConfigEntry<float> CityDrawDistanceMult;
-        // Road street-lighting (spawned)
+        // Road street-lighting.
         public static ConfigEntry<bool> StreetLightsEnabled;
         public static ConfigEntry<bool> StreetLightsAlwaysOn;
         public static ConfigEntry<float> StreetLightIntensity;
-        // Road-type classification (local road density) -> spacing multiplier + colour.
+        // Road-type classification.
         public static ConfigEntry<float> StreetSpacingMainMult, StreetSpacingRuralMult, StreetClassifyRadius;
         public static ConfigEntry<int> StreetCityMinRoads, StreetMainMinRoads;
         public static ConfigEntry<float> StreetLightSpacing;
@@ -74,7 +81,7 @@ namespace RealisticNight
         public static ConfigEntry<bool> StreetDestructible;
         public static ConfigEntry<bool> StreetLightSkipWater;
         public static ConfigEntry<float> StreetBuildingLampSearch;
-        // --- 9. Headlights: beams + decals + pools (modeled lenses where found, bumper mounts where not) ---
+        // --- 9. Headlights ---
         public static ConfigEntry<bool> HeadlightsEnabled;
         public static ConfigEntry<bool> HeadlightsAlwaysOn;
         public static ConfigEntry<bool> HeadlightCones;
@@ -95,7 +102,7 @@ namespace RealisticNight
         public static ConfigEntry<float> RearBrakeBoost;
         public static ConfigEntry<float> HeadlightMaxDist;
         public static ConfigEntry<float> HeadlightWarmth;
-        // --- 10. Ship Lights: deck floods + turret searchlight (ships already have nav lights) ---
+        // --- 10. Ship Lights ---
         public static ConfigEntry<bool> ShipLightsEnabled;
         public static ConfigEntry<bool> ShipLightsAlwaysOn;
         public static ConfigEntry<bool> ShipDeckFloods;
@@ -118,6 +125,17 @@ namespace RealisticNight
         public static ConfigEntry<Color> ShipSearchConeColour;
         public static ConfigEntry<float> ShipSearchSizeScaling;
         public static ConfigEntry<float> ShipMaxDist;
+        // --- 11. Missile Exhaust ---
+        public static ConfigEntry<bool> MissileEnabled;
+        public static ConfigEntry<float> MissileGlowIntensity;
+        public static ConfigEntry<float> MissileGroundIntensity;
+        public static ConfigEntry<float> MissileGroundRangeBoost;
+        // --- 12. Cockpit: roof point light (local player only, gated on nav lights) ---
+        public static ConfigEntry<bool> CockpitRoofEnable;
+        public static ConfigEntry<float> CockpitRoofIntensity;
+        public static ConfigEntry<float> CockpitRoofRange;
+        public static ConfigEntry<float> CockpitRoofHeight;
+        public static ConfigEntry<Color> CockpitRoofColor;
         // Which elements render: glowing balls, ground light pools, both, or neither (dropdown).
         public static ConfigEntry<LampSources> StreetSources;
         public static ConfigEntry<float> StreetGroundIntensity, StreetGroundIntensityYellow, StreetGroundRange, StreetGroundShading, StreetGroundFalloff;
@@ -125,17 +143,17 @@ namespace RealisticNight
         public static ConfigEntry<float> StreetGroundTint;
         public static ConfigEntry<Color> StreetWhite, StreetYellow;
 
-        // Derived from the Light Sources dropdown — read by the renderers.
+        // Derived from Light Sources dropdown.
         public static bool StreetBallsOn => StreetSources.Value == LampSources.BallsAndGround || StreetSources.Value == LampSources.BallsOnly;
         public static bool StreetGroundOn => StreetSources.Value == LampSources.BallsAndGround || StreetSources.Value == LampSources.GroundOnly;
 
-        // Extra world ambient while the game's night vision is active (Tiered NVG mod owns the optics).
         public static ConfigEntry<float> NvgWorldAmbient;
 
         private void Awake()
         {
             Log = Logger;
 
+            Diagnostics = Config.Bind("1. General", "Diagnostics Logging", true, "Top toggle: our diagnostic log lines (build counts, pool status, missile types) on/off. Warnings and errors always log.");
             ModEnabled = Config.Bind("1. General", "Enabled", true, "Master switch. Off = fully vanilla (all effects revert live).");
 
             NightEnabled = Config.Bind("2. Night", "Enabled", false, "Lift the near-black night via ambient light. World only; cockpit unaffected.");
@@ -218,7 +236,7 @@ namespace RealisticNight
 
             // --- 10. Ship Lights ---
             ShipLightsEnabled = Config.Bind("10. Ship Lights", "Enabled", true, "Naval lighting on Ship units (nav markers + deck flood pools + bow searchlight). Client-side, MP-safe.");
-            ShipLightsAlwaysOn = Config.Bind("10. Ship Lights", "Always On (ignore day/night)", true, "Force ship lights ON even in daytime. Normally OFF -> auto-toggle at night.");
+            ShipLightsAlwaysOn = Config.Bind("10. Ship Lights", "Always On (ignore day/night)", false, "Force ship lights ON even in daytime. Normally OFF -> auto-toggle at night.");
             ShipDeckFloods = Config.Bind("10. Ship Lights", "Deck Floods", true, "Wide omni ground pools over the deck (own intensity/range, no beams). Flood count scales with hull length.");
             ShipDeckIntensity = Config.Bind("10. Ship Lights", "Deck Pool Intensity", 0.5f, new ConfigDescription("Deck-flood pool brightness.", new AcceptableValueRange<float>(0f, 100f)));
             ShipDeckRange = Config.Bind("10. Ship Lights", "Deck Pool Range (m)", 267.6056f, new ConfigDescription("Deck-flood pool radius.", new AcceptableValueRange<float>(5f, 500f)));
@@ -240,6 +258,19 @@ namespace RealisticNight
             ShipSearchSizeScaling = Config.Bind("10. Ship Lights", "Spotlight Size Scaling", 0.5962442f, new ConfigDescription("Small turret mounts throw weaker beams (dimmer + shorter) relative to the biggest mount on each hull. 0 = all equal, 1 = fully proportional.", new AcceptableValueRange<float>(0f, 1f)));
             ShipMaxDist = Config.Bind("10. Ship Lights", "Max Render Distance (m)", 80000f, new ConfigDescription("Ship rigs beyond this of the camera hide (cones/decals) and leave the pool feed. Ships stay visible far at sea.", new AcceptableValueRange<float>(500f, 100000f)));
 
+            // --- 11. Missile Exhaust ---
+            MissileEnabled = Config.Bind("11. Missile Exhaust", "Enabled", true, "Missile exhaust glow + ground lighting. Client-side, MP-safe. Covers vanilla + modded missiles (they all use the same Motor/TrailEmitter).");
+            MissileGlowIntensity = Config.Bind("11. Missile Exhaust", "Exhaust Glow Intensity", 4f, new ConfigDescription("Boosts the missile's OWN exhaust flame (vanilla ParticleSystems: bigger + brighter, same particle count). 0 = vanilla flame. No fake glow added. Live.", new AcceptableValueRange<float>(0f, 30f)));
+            MissileGroundIntensity = Config.Bind("11. Missile Exhaust", "Ground Light Intensity", 2f, new ConfigDescription("How much missile launches lighten surrounding ground + buildings. Scales BOTH the vanilla Motor Light[] (real lights) and our deferred ground pools (bypasses URP 8-light cap). 0 = no environment light. Live.", new AcceptableValueRange<float>(0f, 100f)));
+            MissileGroundRangeBoost = Config.Bind("11. Missile Exhaust", "Ground Range Boost x", 1f, new ConfigDescription("Multiplier on each missile's light throw. Missiles with a vanilla Motor light use ITS authored prefab range x boost (author-tuned per weapon, e.g. anti-ship 500m vs AAM 100-200m); light-less modded missiles use the thrust/size fallback. 1 = authored. Live.", new AcceptableValueRange<float>(0.2f, 5f)));
+
+            // --- 12. Cockpit ---
+            CockpitRoofEnable = Config.Bind("12. Cockpit", "Roof Light Enable", true, "Point light above camera in cockpit. Follows nav-light state. Live.");
+            CockpitRoofIntensity = Config.Bind("12. Cockpit", "Roof Light Intensity", 0.4f, new ConfigDescription("Cockpit roof light brightness.", new AcceptableValueRange<float>(0.1f, 2f)));
+            CockpitRoofRange = Config.Bind("12. Cockpit", "Roof Light Range (m)", 4f, new ConfigDescription("Cockpit roof light reach.", new AcceptableValueRange<float>(1f, 10f)));
+            CockpitRoofHeight = Config.Bind("12. Cockpit", "Roof Light Height (m)", 0.5f, new ConfigDescription("Offset above camera.", new AcceptableValueRange<float>(0.1f, 2f)));
+            CockpitRoofColor = Config.Bind("12. Cockpit", "Roof Light Colour", new Color(1f, 0.86f, 0.71f), "Warm white tint.");
+
             new Harmony(GUID).PatchAll();
             Log.LogInfo("Better Night 0.10.0 loaded.");
         }
@@ -252,6 +283,7 @@ namespace RealisticNight
         static readonly AccessTools.FieldRef<NightVision, bool> NvgActiveRef = AccessTools.FieldRefAccess<NightVision, bool>("nightVisActive");
 
         static float lastSeen = -1f;
+        static float nextPoolStatus;
 
         static void Postfix(LevelInfo __instance)
         {
@@ -260,21 +292,44 @@ namespace RealisticNight
 
             LightBoost.Apply(on, night);
             DrawDistance.Apply(on && night && RealisticNightPlugin.CityWindowsEnabled.Value);
-            // Poles persist day + night; balls + pools light up at night (or with Always On).
+            // Street lights: persist day+night, pools gate on night.
             StreetLights.Apply(on && RealisticNightPlugin.StreetLightsEnabled.Value,
                                night || RealisticNightPlugin.StreetLightsAlwaysOn.Value);
-            // Headlight/ship rigs persist day+night (1 Hz sweep); beams/pools gate on night.
+            // Headlights / ships persist day+night; beams/pools gate on night.
             try
             {
                 VehicleHeadlights.Apply(on && RealisticNightPlugin.HeadlightsEnabled.Value,
                                         night || RealisticNightPlugin.HeadlightsAlwaysOn.Value);
             }
             catch { }
-            // Ship lights: same pattern, own family (nav markers + deck floods + searchlight).
+            // Ship lights.
             try
             {
                 ShipLights.Apply(on && RealisticNightPlugin.ShipLightsEnabled.Value,
                                  night || RealisticNightPlugin.ShipLightsAlwaysOn.Value);
+            }
+            catch { }
+            // Missile exhaust.
+            try
+            {
+                MissileExhaust.Apply(on && RealisticNightPlugin.MissileEnabled.Value, night);
+            }
+            catch { }
+            // Cockpit roof light.
+            try
+            {
+                CockpitLightManager.Apply(on, night);
+                CockpitLightManager.Tick();
+            }
+            catch { }
+            // Pool-pipeline diagnostics (30s).
+            try
+            {
+                if (RealisticNightPlugin.DiagOn() && Time.realtimeSinceStartup >= nextPoolStatus)
+                {
+                    nextPoolStatus = Time.realtimeSinceStartup + 30f;
+                    StreetLightFX.LogPoolStatus(night);
+                }
             }
             catch { }
 

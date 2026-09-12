@@ -20,6 +20,7 @@ dotnet "$CSC" \
   -reference:"$MANAGED/UnityEngine.dll" \
   -reference:"$MANAGED/UnityEngine.CoreModule.dll" \
   -reference:"$MANAGED/UnityEngine.PhysicsModule.dll" \
+  -reference:"$MANAGED/UnityEngine.ParticleSystemModule.dll" \
   -reference:"$MANAGED/UnityEngine.TerrainModule.dll" \
   -reference:"$MANAGED/UnityEngine.AssetBundleModule.dll" \
   -reference:"$MANAGED/Unity.RenderPipelines.Universal.Runtime.dll" \

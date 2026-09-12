@@ -20,6 +20,9 @@ public static class BuildBundles
         ("Assets/StreetLightFX.shader", "Assets/StreetLightMat.mat"),
         ("Assets/StreetOrb.shader",     "Assets/StreetOrbMat.mat"),
         ("Assets/HeadlightSpotFX.shader", "Assets/HeadlightSpotMat.mat"), // v2: directional headlight spot pools
+        ("Assets/InstancedGlow.shader", "Assets/InstancedGlowMat.mat"), // instanced cones + lens decals
+        ("Assets/ShipBeam.shader", "Assets/ShipBeamMat.mat"), // soft searchlight beam cones
+        ("Assets/MissileFX.shader", "Assets/MissileMat.mat"), // per-lamp-range missile exhaust pools
     };
 
     public static void Build()
