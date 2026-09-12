@@ -153,7 +153,7 @@ namespace RealisticNight
         {
             Log = Logger;
 
-            Diagnostics = Config.Bind("1. General", "Diagnostics Logging", true, "Top toggle: our diagnostic log lines (build counts, pool status, missile types) on/off. Warnings and errors always log.");
+            Diagnostics = Config.Bind("1. General", "Diagnostics Logging", false, "Top toggle: our diagnostic log lines (build counts, pool status, missile types) on/off. Warnings and errors always log.");
             ModEnabled = Config.Bind("1. General", "Enabled", true, "Master switch. Off = fully vanilla (all effects revert live).");
 
             NightEnabled = Config.Bind("2. Night", "Enabled", false, "Lift the near-black night via ambient light. World only; cockpit unaffected.");
@@ -260,13 +260,13 @@ namespace RealisticNight
 
             // --- 11. Missile Exhaust ---
             MissileEnabled = Config.Bind("11. Missile Exhaust", "Enabled", true, "Missile exhaust glow + ground lighting. Client-side, MP-safe. Covers vanilla + modded missiles (they all use the same Motor/TrailEmitter).");
-            MissileGlowIntensity = Config.Bind("11. Missile Exhaust", "Exhaust Glow Intensity", 4f, new ConfigDescription("Boosts the missile's OWN exhaust flame (vanilla ParticleSystems: bigger + brighter, same particle count). 0 = vanilla flame. No fake glow added. Live.", new AcceptableValueRange<float>(0f, 30f)));
+            MissileGlowIntensity = Config.Bind("11. Missile Exhaust", "Exhaust Glow Intensity", 2f, new ConfigDescription("Boosts the missile's OWN exhaust flame (vanilla ParticleSystems: bigger + brighter, same particle count). 0 = vanilla flame. No fake glow added. Live.", new AcceptableValueRange<float>(0f, 30f)));
             MissileGroundIntensity = Config.Bind("11. Missile Exhaust", "Ground Light Intensity", 2f, new ConfigDescription("How much missile launches lighten surrounding ground + buildings. Scales BOTH the vanilla Motor Light[] (real lights) and our deferred ground pools (bypasses URP 8-light cap). 0 = no environment light. Live.", new AcceptableValueRange<float>(0f, 100f)));
-            MissileGroundRangeBoost = Config.Bind("11. Missile Exhaust", "Ground Range Boost x", 1f, new ConfigDescription("Multiplier on each missile's light throw. Missiles with a vanilla Motor light use ITS authored prefab range x boost (author-tuned per weapon, e.g. anti-ship 500m vs AAM 100-200m); light-less modded missiles use the thrust/size fallback. 1 = authored. Live.", new AcceptableValueRange<float>(0.2f, 5f)));
+            MissileGroundRangeBoost = Config.Bind("11. Missile Exhaust", "Ground Range Boost x", 2f, new ConfigDescription("Multiplier on each missile's light throw. Missiles with a vanilla Motor light use ITS authored prefab range x boost (author-tuned per weapon, e.g. anti-ship 500m vs AAM 100-200m); light-less modded missiles use the thrust/size fallback. 1 = authored. Live.", new AcceptableValueRange<float>(0.2f, 5f)));
 
             // --- 12. Cockpit ---
             CockpitRoofEnable = Config.Bind("12. Cockpit", "Roof Light Enable", true, "Point light above camera in cockpit. Follows nav-light state. Live.");
-            CockpitRoofIntensity = Config.Bind("12. Cockpit", "Roof Light Intensity", 0.4f, new ConfigDescription("Cockpit roof light brightness.", new AcceptableValueRange<float>(0.1f, 2f)));
+            CockpitRoofIntensity = Config.Bind("12. Cockpit", "Roof Light Intensity", 1f, new ConfigDescription("Cockpit roof light brightness.", new AcceptableValueRange<float>(0.1f, 2f)));
             CockpitRoofRange = Config.Bind("12. Cockpit", "Roof Light Range (m)", 4f, new ConfigDescription("Cockpit roof light reach.", new AcceptableValueRange<float>(1f, 10f)));
             CockpitRoofHeight = Config.Bind("12. Cockpit", "Roof Light Height (m)", 0.5f, new ConfigDescription("Offset above camera.", new AcceptableValueRange<float>(0.1f, 2f)));
             CockpitRoofColor = Config.Bind("12. Cockpit", "Roof Light Colour", new Color(1f, 0.86f, 0.71f), "Warm white tint.");
